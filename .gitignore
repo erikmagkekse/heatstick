@@ -1,0 +1,20 @@
+# Built binaries (sources live in cmd/ and research/tools/)
+/heatit
+/heatit-app
+*.exe
+
+# fyne-cross build output
+fyne-cross/
+
+# Research tool binaries built in place
+research/tools/probe
+research/tools/explore
+research/tools/devtest
+research/tools/treattest
+research/tools/ledtest
+
+# Snapshots / archives
+*.zip
+
+# Fyne app data
+.fyne*

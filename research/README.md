@@ -1,0 +1,56 @@
+# Research
+
+Reverse-engineering artifacts for the heat it dongle protocol, kept
+separate from the shipped code (`../device/`, `../cmd/heatit/`).
+
+## Contents
+
+| path | what it is |
+|---|---|
+| `protocol.md` | the full protocol spec (frame format, message table, verified frames, statistics & version layouts) |
+| `led.md` | LED state machine + SET_LED_SCALE findings |
+| `logs/` | captured USB traffic: `heat_modes.log` (configuration/mode exploration), `heat_treatment.log` (full treatment with phase transitions), `heatit_run.log` (app run: status, statistics, version, LED) |
+| `tools/` | standalone Go debug CLIs (same module, `package main`) |
+
+## Tools
+
+```sh
+go run ./research/tools/explore   -cfg 2            # dump USB descriptors, listen for traffic
+go run ./research/tools/probe     -cfg 2 -cmd rw -data "ff 02 00" -count 2
+go run ./research/tools/devtest   # typed wire test: status/heat/abort/led/stats
+go run ./research/tools/treattest # full treatment flow, reports peak temperature per mode
+go run ./research/tools/ledtest   auto              # LED state-machine walkthrough
+```
+
+`probe -cmd` values: `desc` (descriptors), `read`, `write`, `rw`, `dump`.
+`explore -ops` accepts semicolon-separated `W:<hex>` / `R:<ms>` steps for
+scripted sessions.
+
+## How the protocol was derived
+
+1. **Decompiled the official Android app** (v2.8.1.187, `jadx
+   --show-bad-code`) and read the protocol classes:
+   - `o4/r.java` — frame base class: header `0xFF`, 12-byte size,
+     checksum computation (req = sum of fields, resp = sum of id + fields).
+   - `o4/w.java`, `o4/C1949c.java`, `o4/C1953g.java`, `o4/m.java` —
+     per-message field schemas (version info, flash, statistics layout).
+   - `n4/h.java`, `V/k.java` — version-block handling (two 6-byte flash
+     reads, semver tuples, feature comparisons).
+   - `i4/p1.java` — the app's local `InternalMemory` DB table: the field
+     names used for the statistics blob.
+   - `o4/p.java` — LED modifier bits (BLINK/FLASH/MANUAL).
+2. **Captured real traffic** with the raw USB tools (`probe`, `explore`)
+   while operating the official app → `logs/`.
+3. **Wire-verified every message** end-to-end with `devtest` /
+   `treattest`: frame sizes, checksums, payload semantics, phases, peak
+   temperatures.
+4. **Cross-checked** app schema vs. real data; one discrepancy found:
+   the dongle emits the *aligned* statistics layout although the app's
+   version heuristic would select the *extended* one (see
+   `protocol.md`).
+
+## Reference materials (ephemeral)
+
+- Official APK: `/tmp/heatit.apk` (v2.8.1.187)
+- Decompiled sources: `/tmp/jadx-bad/sources/`
+- udev rule: `/etc/udev/rules.d/99-heatit.rules`

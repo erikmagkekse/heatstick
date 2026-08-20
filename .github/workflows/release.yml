@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag name (blank = manual-<run>)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: windows
+            arch: amd64
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install fyne-cross
+        run: |
+          go install github.com/fyne-io/fyne-cross@v1.6.1
+          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+
+      - name: Build
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          case "$version" in "$GITHUB_REF_NAME"|"") version="0.0.0";; esac
+          fyne-cross ${{ matrix.os }} \
+            -arch=${{ matrix.arch }} \
+            -name heatit \
+            -app-id com.kamedi.heatit \
+            -app-version "$version" \
+            -ldflags "-s -w" \
+            --pull
+
+      - name: Package
+        run: |
+          os="${{ matrix.os }}"
+          arch="${{ matrix.arch }}"
+          version="${GITHUB_REF_NAME#v}"
+          case "$version" in "$GITHUB_REF_NAME"|"") version="0.0.0";; esac
+          base="heatit_${version}_${os}-${arch}"
+          mkdir -p dist
+          if [ "$os" = "windows" ]; then
+            zip -q "dist/${base}.zip" "fyne-cross/bin/${os}-${arch}/heatit.exe"
+          else
+            tar -czf "dist/${base}.tar.gz" "fyne-cross/bin/${os}-${arch}/heatit"
+          fi
+          ls -la dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: cd dist && sha256sum * | grep -v SHA256SUMS.txt > SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || format('manual-{0}', github.run_number) }}
+          name: heat it ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || format('manual-{0}', github.run_number) }}
+          files: dist/*
+          generate_release_notes: true
