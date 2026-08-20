@@ -47,8 +47,12 @@ type Device struct {
 func Open() (*Device, error) {
 	ctx := gousb.NewContext()
 	dev, err := ctx.OpenDeviceWithVIDPID(Vid, Pid)
-	if err != nil {
+	// gousb returns (nil, nil) when no device matches, so guard both.
+	if err != nil || dev == nil {
 		_ = ctx.Close()
+		if err == nil {
+			err = fmt.Errorf("no heat it dongle (VID %04x PID %04x) attached", Vid, Pid)
+		}
 		return nil, fmt.Errorf("open device: %w", err)
 	}
 	cfg, err := dev.Config(AppConfig)

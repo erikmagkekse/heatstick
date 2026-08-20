@@ -16,21 +16,28 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.host }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: linux
             arch: amd64
+            host: ubuntu-latest
           - os: linux
             arch: arm64
+            host: ubuntu-latest
           - os: windows
             arch: amd64
+            host: ubuntu-latest
+          # darwin is built natively (no Docker / no Apple SDK extraction):
+          # the runner arch matches the target arch so cgo + libusb line up.
           - os: darwin
             arch: amd64
+            host: macos-15-intel
           - os: darwin
             arch: arm64
+            host: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -39,34 +46,51 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Install fyne-cross
+      - name: Install fyne-cross (linux / windows)
+        if: ${{ matrix.os != 'darwin' }}
         run: |
           go install github.com/fyne-io/fyne-cross@v1.6.1
           echo "$HOME/go/bin" >> "$GITHUB_PATH"
+
+      - name: Install libusb (darwin)
+        if: ${{ matrix.os == 'darwin' }}
+        run: brew install pkg-config libusb
 
       - name: Build
         run: |
           version="${GITHUB_REF_NAME#v}"
           case "$version" in "$GITHUB_REF_NAME"|"") version="0.0.0";; esac
-          fyne-cross ${{ matrix.os }} \
-            -arch=${{ matrix.arch }} \
-            -name heatit \
-            -app-id com.kamedi.heatit \
-            -app-version "$version" \
-            --pull
+          if [ "${{ matrix.os }}" = "darwin" ]; then
+            export GOOS=darwin GOARCH=${{ matrix.arch }}
+            export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:${PKG_CONFIG_PATH}"
+            mkdir -p "buildout/darwin-${{ matrix.arch }}"
+            go build -o "buildout/darwin-${{ matrix.arch }}/heatit" ./cmd/heatit
+          else
+            fyne-cross ${{ matrix.os }} \
+              -arch=${{ matrix.arch }} \
+              -name heatit \
+              -app-id com.kamedi.heatit \
+              -app-version "$version" \
+              --pull
+          fi
 
       - name: Package
         run: |
-          os="${{ matrix.os }}"
-          arch="${{ matrix.arch }}"
+          os="${{ matrix.os }}"; arch="${{ matrix.arch }}"
           version="${GITHUB_REF_NAME#v}"
           case "$version" in "$GITHUB_REF_NAME"|"") version="0.0.0";; esac
           base="heatit_${version}_${os}-${arch}"
           mkdir -p dist
-          if [ "$os" = "windows" ]; then
-            zip -q "dist/${base}.zip" "fyne-cross/bin/${os}-${arch}/heatit.exe"
+          if [ "$os" = "darwin" ]; then
+            bin="buildout/darwin-${arch}/heatit"
           else
-            tar -czf "dist/${base}.tar.gz" "fyne-cross/bin/${os}-${arch}/heatit"
+            bin="fyne-cross/bin/${os}-${arch}/heatit"
+            [ "$os" = "windows" ] && bin="${bin}.exe"
+          fi
+          if [ "$os" = "linux" ]; then
+            tar -czf "dist/${base}.tar.gz" "$bin"
+          else
+            zip -q "dist/${base}.zip" "$bin"
           fi
           ls -la dist
 
