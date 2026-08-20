@@ -66,12 +66,15 @@ jobs:
             mkdir -p "buildout/darwin-${{ matrix.arch }}"
             go build -o "buildout/darwin-${{ matrix.arch }}/heatit" ./cmd/heatit
           else
+            # The app main package is ./cmd/heatit (not the repo root), so
+            # pass it as the package arg (fyne package -src).
             fyne-cross ${{ matrix.os }} \
               -arch=${{ matrix.arch }} \
               -name heatit \
               -app-id com.kamedi.heatit \
               -app-version "$version" \
-              --pull
+              --pull \
+              ./cmd/heatit
           fi
 
       - name: Package
