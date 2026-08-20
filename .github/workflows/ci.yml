@@ -20,9 +20,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libgl1-mesa-dev libxkbcommon-dev libwayland-dev \
-            libegl-dev libxxf86vm-dev libxcursor-dev \
-            libusb-1.0-0-dev
+            libgl1-mesa-dev xorg-dev libxkbcommon-dev \
+            libwayland-dev libegl-dev libusb-1.0-0-dev
 
       - name: gofmt
         run: test -z "$(gofmt -l .)"
