@@ -53,7 +53,6 @@ jobs:
             -name heatit \
             -app-id com.kamedi.heatit \
             -app-version "$version" \
-            -ldflags "-s -w" \
             --pull
 
       - name: Package
