@@ -1,6 +1,6 @@
 # Built binaries (sources live in cmd/ and research/tools/)
-/heatit
-/heatit-app
+/heatstick
+/heatstick-app
 *.exe
 
 # fyne-cross build output

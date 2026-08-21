@@ -26,17 +26,17 @@ jobs:
           - os: linux
             arch: amd64
             host: ubuntu-latest
-            image: heatit-fyne-cross:linux
+            image: heatstick-fyne-cross:linux
             dockerfile: docker/Dockerfile.linux
           - os: linux
             arch: arm64
             host: ubuntu-latest
-            image: heatit-fyne-cross:linux-arm64
+            image: heatstick-fyne-cross:linux-arm64
             dockerfile: docker/Dockerfile.linux-arm64
           - os: windows
             arch: amd64
             host: ubuntu-latest
-            image: heatit-fyne-cross:windows
+            image: heatstick-fyne-cross:windows
             dockerfile: docker/Dockerfile.windows
           # darwin is built natively (no Docker / no Apple SDK extraction):
           # the runner arch matches the target arch so cgo + libusb line up.
@@ -76,17 +76,17 @@ jobs:
             export GOOS=darwin GOARCH=${{ matrix.arch }}
             export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:${PKG_CONFIG_PATH}"
             mkdir -p "buildout/darwin-${{ matrix.arch }}"
-            go build -o "buildout/darwin-${{ matrix.arch }}/heatit" ./cmd/heatit
+            go build -o "buildout/darwin-${{ matrix.arch }}/heatstick" ./cmd/heatstick
           else
-            # The app main package is ./cmd/heatit (not the repo root), so
+            # The app main package is ./cmd/heatstick (not the repo root), so
             # pass it as the package arg (fyne package -src).
             fyne-cross ${{ matrix.os }} \
               -arch=${{ matrix.arch }} \
-              -name heatit \
+              -name heatstick \
               -app-id com.kamedi.heatit \
               -app-version "$version" \
               -image "${{ matrix.image }}" \
-              ./cmd/heatit
+              ./cmd/heatstick
           fi
 
       - name: Package
@@ -94,12 +94,12 @@ jobs:
           os="${{ matrix.os }}"; arch="${{ matrix.arch }}"
           version="${GITHUB_REF_NAME#v}"
           case "$version" in "$GITHUB_REF_NAME"|"") version="0.0.0";; esac
-          base="heatit_${version}_${os}-${arch}"
+          base="heatstick_${version}_${os}-${arch}"
           mkdir -p dist
           if [ "$os" = "darwin" ]; then
-            bin="buildout/darwin-${arch}/heatit"
+            bin="buildout/darwin-${arch}/heatstick"
           else
-            bin="fyne-cross/bin/${os}-${arch}/heatit"
+            bin="fyne-cross/bin/${os}-${arch}/heatstick"
             [ "$os" = "windows" ] && bin="${bin}.exe"
           fi
           # Ship the raw binary (no archive).
@@ -132,6 +132,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || format('manual-{0}', github.run_number) }}
-          name: heat it ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || format('manual-{0}', github.run_number) }}
+          name: heatstick ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || format('manual-{0}', github.run_number) }}
           files: dist/*
           generate_release_notes: true

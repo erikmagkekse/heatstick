@@ -1,4 +1,4 @@
-module heatit
+module heatstick
 
 go 1.24.4
 

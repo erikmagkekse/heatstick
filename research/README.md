@@ -1,7 +1,7 @@
 # Research
 
 Reverse-engineering artifacts for the heat it dongle protocol, kept
-separate from the shipped code (`../device/`, `../cmd/heatit/`).
+separate from the shipped code (`../device/`, `../cmd/heatstick/`).
 
 ## Contents
 
@@ -53,4 +53,4 @@ scripted sessions.
 
 - Official APK: `/tmp/heatit.apk` (v2.8.1.187)
 - Decompiled sources: `/tmp/jadx-bad/sources/`
-- udev rule: `/etc/udev/rules.d/99-heatit.rules`
+- udev rule: `/etc/udev/rules.d/99-heatstick.rules`

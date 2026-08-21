@@ -13,7 +13,7 @@ import (
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
 
-	"heatit/device"
+	"heatstick/device"
 )
 
 // TestScreenshots renders the real app UI with Fyne's deterministic software
@@ -28,7 +28,7 @@ import (
 // otherwise plausible simulated values are used, so the test passes
 // headless.
 //
-// Regenerate with: go test ./cmd/heatit/ -run TestScreenshots -v
+// Regenerate with: go test ./cmd/heatstick/ -run TestScreenshots -v
 func TestScreenshots(t *testing.T) {
 	outDir := filepath.Join("..", "..", "docs", "screenshots")
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
@@ -56,7 +56,7 @@ func TestScreenshots(t *testing.T) {
 			}
 
 			u := &ui{}
-			w := a.NewWindow("heat it")
+			w := a.NewWindow("heatstick")
 			w.SetContent(buildUI(a, c, u))
 			u.followSystem = false // the theme is set explicitly above
 			w.Resize(fyne.NewSize(460, 660))

@@ -1,4 +1,4 @@
-// Command heatit is a desktop app (X11, Wayland, Windows) that replicates
+// Command heatstick is a desktop app (X11, Wayland, Windows) that replicates
 // the "heat it" smartphone app for the Kamedi heat it dongle.
 package main
 
@@ -17,7 +17,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"heatit/device"
+	"heatstick/device"
 )
 
 const appID = "com.kamedi.heatit"
@@ -355,7 +355,7 @@ func main() {
 	u := &ui{}
 	content := buildUI(a, c, u)
 
-	w := a.NewWindow("heat it")
+	w := a.NewWindow("heatstick")
 	w.Resize(fyne.NewSize(460, 660))
 	w.SetContent(content)
 	w.CenterOnScreen()

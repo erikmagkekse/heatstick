@@ -1,4 +1,4 @@
-# heat it — desktop app
+# heatstick — desktop app
 
 A cross-platform desktop replica of the "heat it®" smartphone app
 (Kamedi GmbH) for the **heat it dongle** (USB, VID/PID `32f9:0001`),
@@ -41,9 +41,9 @@ Prerequisites (Linux): Go ≥ 1.24, libusb, and the Fyne system libraries
 
 ```sh
 go build ./...
-go run ./cmd/heatit/
+go run ./cmd/heatstick/
 # or build a binary:
-go build -o heatit-app ./cmd/heatit/ && ./heatit-app
+go build -o heatstick-app ./cmd/heatstick/ && ./heatstick-app
 ```
 
 Flags:
@@ -54,19 +54,19 @@ Flags:
 | `-treat` | start a treatment automatically once connected |
 
 App screenshots are rendered by the test driver (see
-`cmd/heatit/screenshot_test.go`) — the GL driver's `Canvas.Capture()`
+`cmd/heatstick/screenshot_test.go`) — the GL driver's `Canvas.Capture()`
 returns noise on desktop, so this is the supported way to regenerate
 `docs/screenshots/`:
 
 ```sh
-go test ./cmd/heatit/ -run TestScreenshots -v
+go test ./cmd/heatstick/ -run TestScreenshots -v
 ```
 
 ### Windows cross-compile
 
 ```sh
 CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC=x86_64-w64-mingw32-gcc \
-    go build -o heatit.exe ./cmd/heatit/
+    go build -o heatstick.exe ./cmd/heatstick/
 ```
 
 (Requires the MinGW-w64 toolchain **and** a mingw libusb, e.g.
@@ -82,9 +82,9 @@ a GitHub Release:
 
 | asset | content |
 |---|---|
-| `heatit_<ver>_linux-amd64` / `_linux-arm64` | Linux binary |
-| `heatit_<ver>_windows-amd64.exe` | Windows binary |
-| `heatit_<ver>_darwin-amd64` / `_darwin-arm64` | macOS binary |
+| `heatstick_<ver>_linux-amd64` / `_linux-arm64` | Linux binary |
+| `heatstick_<ver>_windows-amd64.exe` | Windows binary |
+| `heatstick_<ver>_darwin-amd64` / `_darwin-arm64` | macOS binary |
 | `SHA256SUMS.txt` | checksums |
 
 CI (gofmt / vet / build / test) runs on every push to `main` and on PRs.
@@ -94,7 +94,7 @@ CI (gofmt / vet / build / test) runs on every push to `main` and on PRs.
 ### USB access (Linux)
 
 The dongle needs no root if a udev rule grants access, e.g.
-`/etc/udev/rules.d/99-heatit.rules`:
+`/etc/udev/rules.d/99-heatstick.rules`:
 
 ```
 SUBSYSTEM=="usb", ATTR{idVendor}=="32f9", ATTR{idProduct}=="0001", MODE="0666"
@@ -103,7 +103,7 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="32f9", ATTR{idProduct}=="0001", MODE="0666"
 ## Project structure
 
 ```
-├── cmd/heatit/      the desktop app (Fyne UI + controller)
+├── cmd/heatstick/    the desktop app (Fyne UI + controller)
 ├── device/          USB transport (gousb) + protocol layer
 ├── research/        reverse-engineering artifacts (tools, logs, protocol spec)
 └── docs/screenshots/  app screenshots (regenerated via go test)
