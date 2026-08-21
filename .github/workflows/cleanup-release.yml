@@ -1,0 +1,32 @@
+name: Cleanup old release assets
+
+# One-shot: removes the pre-rename heatit_* archive assets from the v1.0.0
+# release. Delete this workflow after running it once.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const rel = await github.rest.releases.getByTag({
+              owner: context.repo.owner, repo: context.repo.repo, tag: 'v1.0.0',
+            })
+            const assets = await github.rest.releases.listAssets({
+              owner: context.repo.owner, repo: context.repo.repo, release_id: rel.data.id, per_page: 100,
+            })
+            for (const a of assets.data) {
+              if (a.name.startsWith('heatit_')) {
+                await github.rest.releases.deleteAsset({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  release_id: rel.data.id, asset_id: a.id,
+                })
+                core.info('deleted ' + a.name)
+              }
+            }
