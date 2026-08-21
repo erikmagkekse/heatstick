@@ -29,7 +29,7 @@ const (
 )
 
 var (
-	flagDark  = flag.Bool("dark", false, "start in dark mode")
+	flagDark  = flag.Bool("dark", false, "start in dark mode (default: follow the system light/dark setting)")
 	flagTreat = flag.Bool("treat", false, "start a treatment automatically once connected")
 )
 
@@ -337,6 +337,7 @@ type ui struct {
 	versionLabel   *widget.Label
 	sensitiveCheck *widget.Check
 	darkCheck      *widget.Check
+	followSystem   bool
 }
 
 func main() {
@@ -345,9 +346,9 @@ func main() {
 	a := app.NewWithID(appID)
 	if *flagDark {
 		a.Settings().SetTheme(theme.DarkTheme())
-	} else {
-		a.Settings().SetTheme(theme.LightTheme())
 	}
+	// No explicit theme otherwise: Fyne uses the default theme with the
+	// system's light/dark variant and follows live system changes.
 
 	c := &ctrl{tempBase: baseChild, durLevel: 0, log: &trafficLog{cap: 120}}
 
@@ -371,7 +372,7 @@ func main() {
 	go func() {
 		t := time.NewTicker(100 * time.Millisecond)
 		for range t.C {
-			fyne.Do(func() { refresh(c, u) })
+			fyne.Do(func() { refresh(a, c, u) })
 		}
 	}()
 
@@ -599,17 +600,17 @@ func buildUI(a fyne.App, c *ctrl, u *ui) fyne.CanvasObject {
 		u.trafficLabel,
 	))
 
-	// --- Dark mode ---
+	// --- Dark mode (follows the system setting unless explicitly toggled) ---
+	u.followSystem = !*flagDark
 	u.darkCheck = widget.NewCheck("Dark mode", func(on bool) {
+		u.followSystem = false
 		if on {
 			a.Settings().SetTheme(theme.DarkTheme())
 		} else {
 			a.Settings().SetTheme(theme.LightTheme())
 		}
 	})
-	if *flagDark {
-		u.darkCheck.SetChecked(true)
-	}
+	u.darkCheck.SetChecked(*flagDark || a.Settings().ThemeVariant() == theme.VariantDark)
 	darkCard := widget.NewCard("Display", "", container.NewVBox(u.darkCheck))
 
 	body := container.NewVBox(
@@ -648,7 +649,12 @@ func refreshStats(u *ui, d debugInfo) {
 }
 
 // refresh updates the UI from the controller state (main goroutine).
-func refresh(c *ctrl, u *ui) {
+func refresh(a fyne.App, c *ctrl, u *ui) {
+	// Keep the "Dark mode" check in sync while following the system setting.
+	if u.followSystem {
+		u.darkCheck.SetChecked(a.Settings().ThemeVariant() == theme.VariantDark)
+	}
+
 	connected, treating, st, preheat, duration, start, err := c.snapshot()
 
 	if connected {

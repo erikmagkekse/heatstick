@@ -5,7 +5,7 @@ A cross-platform desktop replica of the "heat it®" smartphone app
 written in Go with [Fyne](https://fyne.io) (UI) and
 [gousb](https://github.com/google/gousb) (USB transport).
 
-Targets: **Linux (X11 + Wayland)** and **Windows**.
+Targets: **Linux (X11 + Wayland)**, **Windows** and **macOS**.
 
 | | | |
 |---|---|---|
@@ -50,7 +50,7 @@ Flags:
 
 | Flag | Effect |
 |---|---|
-| `-dark` | start in dark mode |
+| `-dark` | start in dark mode (default: follow the system light/dark setting) |
 | `-treat` | start a treatment automatically once connected |
 
 App screenshots are rendered by the test driver (see
@@ -82,9 +82,9 @@ a GitHub Release:
 
 | asset | content |
 |---|---|
-| `heatit_<ver>_linux-amd64.tar.gz` / `_linux-arm64.tar.gz` | Linux binary |
-| `heatit_<ver>_windows-amd64.zip` | Windows binary |
-| `heatit_<ver>_darwin-amd64.tar.gz` / `_darwin-arm64.tar.gz` | macOS binary |
+| `heatit_<ver>_linux-amd64` / `_linux-arm64` | Linux binary |
+| `heatit_<ver>_windows-amd64.exe` | Windows binary |
+| `heatit_<ver>_darwin-amd64` / `_darwin-arm64` | macOS binary |
 | `SHA256SUMS.txt` | checksums |
 
 CI (gofmt / vet / build / test) runs on every push to `main` and on PRs.

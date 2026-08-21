@@ -58,13 +58,14 @@ func TestScreenshots(t *testing.T) {
 			u := &ui{}
 			w := a.NewWindow("heat it")
 			w.SetContent(buildUI(a, c, u))
+			u.followSystem = false // the theme is set explicitly above
 			w.Resize(fyne.NewSize(460, 660))
 			if dark {
 				u.darkCheck.SetChecked(true)
 			}
 			w.Canvas().(software.WindowlessCanvas).SetScale(2) // crisp 2x output
 
-			refresh(c, u)
+			refresh(a, c, u)
 			d := c.debugSnapshot()
 			refreshVersion(u, d)
 			refreshStats(u, d)

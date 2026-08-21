@@ -102,11 +102,9 @@ jobs:
             bin="fyne-cross/bin/${os}-${arch}/heatit"
             [ "$os" = "windows" ] && bin="${bin}.exe"
           fi
-          if [ "$os" = "linux" ]; then
-            tar -czf "dist/${base}.tar.gz" "$bin"
-          else
-            zip -q "dist/${base}.zip" "$bin"
-          fi
+          # Ship the raw binary (no archive).
+          [ "$os" = "windows" ] && base="${base}.exe"
+          cp "$bin" "dist/${base}"
           ls -la dist
 
       - name: Upload artifact
