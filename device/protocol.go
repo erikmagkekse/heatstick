@@ -306,26 +306,45 @@ func (v *VersionInfo) String() string {
 		r[0], r[1], r[2], r[3], r[4], r[5], variant, r[7], r[8], r[9], r[10], r)
 }
 
+// ReadFlash reads the 6 flash bytes starting at addr (0x0000-0xFFFF) via
+// MsgGetFlash and returns the data (the echoed addr/len fields are skipped).
+// Reads near the end of the address space may return bytes past the
+// requested window; callers clamp.
+func (d *Device) ReadFlash(addr int) ([]byte, error) {
+	if addr < 0 || addr > 0xFFFD {
+		return nil, fmt.Errorf("flash addr %d out of range (0x0000-0xFFFD)", addr)
+	}
+	resp, err := d.Request(buildRequest(MsgGetFlash, byte(addr>>8), byte(addr), 6))
+	if err != nil {
+		return nil, fmt.Errorf("flash %d: %w", addr, err)
+	}
+	id, fields, err := parseResponse(resp)
+	if err != nil {
+		return nil, err
+	}
+	if id != MsgGetFlash {
+		return nil, fmt.Errorf("flash %d: expected 0x%02x, got 0x%02x", addr, MsgGetFlash, id)
+	}
+	if len(fields) != 9 {
+		return nil, fmt.Errorf("flash %d: expected 9 bytes, got %d", addr, len(fields))
+	}
+	got := int(binary.BigEndian.Uint16(fields[0:2]))
+	if got != addr {
+		return nil, fmt.Errorf("flash %d: echoed addr 0x%04x", addr, got)
+	}
+	return append([]byte(nil), fields[3:9]...), nil // skip addr (2) + len (1)
+}
+
 // GetVersionInfo reads the version block (flash addresses 0-11) in two
 // 6-byte reads, matching the official app.
 func (d *Device) GetVersionInfo() (*VersionInfo, error) {
 	var raw [12]byte
 	for off := 0; off < 12; off += 6 {
-		resp, err := d.Request(buildRequest(MsgGetFlash, byte(off>>8), byte(off), 6))
-		if err != nil {
-			return nil, fmt.Errorf("version flash %d: %w", off, err)
-		}
-		id, fields, err := parseResponse(resp)
+		data, err := d.ReadFlash(off)
 		if err != nil {
 			return nil, err
 		}
-		if id != MsgGetFlash {
-			return nil, fmt.Errorf("version flash %d: expected 0x%02x, got 0x%02x", off, MsgGetFlash, id)
-		}
-		if len(fields) != 9 {
-			return nil, fmt.Errorf("version flash %d: expected 9 bytes, got %d", off, len(fields))
-		}
-		copy(raw[off:off+6], fields[3:9]) // skip addr (2) + len (1)
+		copy(raw[off:off+6], data)
 	}
 	return &VersionInfo{Raw: raw[:]}, nil
 }
