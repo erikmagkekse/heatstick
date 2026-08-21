@@ -83,7 +83,7 @@ jobs:
             fyne-cross ${{ matrix.os }} \
               -arch=${{ matrix.arch }} \
               -name heatstick \
-              -app-id com.kamedi.heatit \
+              -app-id com.erikmagkekse.heatstick \
               -app-version "$version" \
               -image "${{ matrix.image }}" \
               ./cmd/heatstick

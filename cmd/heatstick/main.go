@@ -20,7 +20,7 @@ import (
 	"heatstick/device"
 )
 
-const appID = "com.kamedi.heatit"
+const appID = "com.erikmagkekse.heatstick"
 
 // tempBase values (index into device.TemperatureLevels).
 const (
