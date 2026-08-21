@@ -1,0 +1,17 @@
+# fyne-cross base image + libusb (gousb links it via `#cgo pkg-config: libusb-1.0`).
+FROM fyneio/fyne-cross-images:linux
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libusb-1.0-0-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# fyne-cross compiles cgo C code with `zig cc`, which defaults to Debug mode
+# and instruments it with ubsan (__ubsan_handle_* refs) that nothing provides at
+# link time. Optimize the C code instead.
+ENV CFLAGS=-O2
+
+# The bundled Fyne .so files (Debian 13) reference glibc symbols up to 2.38,
+# which zig's default bundled glibc lacks. Bump the link's target glibc to the
+# distro's 2.41; CGO_LDFLAGS is what reaches the final external link command
+# (a trailing -target overrides the one in CC).
+ENV CGO_LDFLAGS="-target x86_64-linux-gnu.2.41"

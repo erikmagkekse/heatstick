@@ -1,0 +1,75 @@
+# fyne-cross base image + a static aarch64 libusb built with zig, so gousb can
+# link via `#cgo pkg-config: libusb-1.0` when cross-compiling linux/arm64
+# (the distro package only ships the host arch).
+FROM fyneio/fyne-cross-images:linux
+
+ARG LIBUSB_VERSION=1.0.27
+
+RUN set -eux; \
+    cd /tmp; \
+    curl -sSL -o libusb.tar.gz "https://github.com/libusb/libusb/archive/refs/tags/v${LIBUSB_VERSION}.tar.gz"; \
+    tar xzf libusb.tar.gz; \
+    cd "libusb-${LIBUSB_VERSION}"; \
+    \
+    mkdir -p /tmp/lcfg /tmp/obj /tmp/archive \
+             /usr/lib/aarch64-linux-gnu /usr/include/libusb-1.0 /usr/lib/pkgconfig; \
+    # zig's bundled <sys/socket.h> lacks struct ucred / SCM_CREDENTIALS
+    # (present in glibc), which linux_netlink.c needs.
+    printf '%s\n' \
+      '#define DEFAULT_VISIBILITY /**/' \
+      '#define ENABLE_LOGGING 1' \
+      '#define PLATFORM_POSIX 1' \
+      '#define HAVE_CLOCK_GETTIME 1' \
+      '#define PRINTF_FORMAT(a, b) /**/' \
+      '#include <sys/types.h>' \
+      '#ifndef SCM_CREDENTIALS' \
+      '#define SCM_CREDENTIALS 3' \
+      '#endif' \
+      'struct ucred {' \
+      '    pid_t pid;' \
+      '    uid_t uid;' \
+      '    gid_t gid;' \
+      '};' \
+      > /tmp/lcfg/config.h; \
+    \
+    # Compile each libusb source file for aarch64-linux-gnu with zig.
+    for f in \
+      libusb/core.c libusb/descriptor.c libusb/hotplug.c libusb/io.c \
+      libusb/strerror.c libusb/sync.c \
+      libusb/os/events_posix.c libusb/os/threads_posix.c \
+      libusb/os/linux_netlink.c libusb/os/linux_usbfs.c; do \
+      zig cc -target aarch64-linux-gnu -O2 -c -I. -Ilibusb -I/tmp/lcfg "$f" -o "/tmp/obj/$(basename "$f" .c).o"; \
+    done; \
+    \
+    # Archive the objects into a static lib (named after the first object).
+    (cd /tmp/archive && zig build-lib -target aarch64-linux-gnu /tmp/obj/*.o); \
+    install -m 0644 /tmp/archive/libcore.a /usr/lib/aarch64-linux-gnu/libusb-1.0.a; \
+    \
+    # Public header + pkg-config file (absolute Libs path: the arch-specific
+    # dir is not on the linker search path by default).
+    cp libusb/libusb.h /usr/include/libusb-1.0/libusb.h; \
+    printf '%s\n' \
+      'prefix=/usr' \
+      'exec_prefix=${prefix}' \
+      'libdir=/usr/lib/aarch64-linux-gnu' \
+      'includedir=${prefix}/include' \
+      '' \
+      'Name: libusb-1.0' \
+      'Description: C API for USB device access (aarch64, static)' \
+      "Version: ${LIBUSB_VERSION}" \
+      'Libs: /usr/lib/aarch64-linux-gnu/libusb-1.0.a' \
+      'Cflags: -I${includedir}/libusb-1.0' \
+      > /usr/lib/pkgconfig/libusb-1.0.pc; \
+    \
+    rm -rf "/tmp/libusb-${LIBUSB_VERSION}" /tmp/libusb.tar.gz /tmp/lcfg /tmp/obj /tmp/archive
+
+# fyne-cross compiles cgo C code with `zig cc`, which defaults to Debug mode
+# and instruments it with ubsan (__ubsan_handle_* refs) that nothing provides at
+# link time. Optimize the C code instead.
+ENV CFLAGS=-O2
+
+# The bundled Fyne .so files (Debian 13) reference glibc symbols up to 2.38,
+# which zig's default bundled glibc lacks. Bump the link's target glibc to the
+# distro's 2.41; CGO_LDFLAGS is what reaches the final external link command
+# (a trailing -target overrides the one in CC).
+ENV CGO_LDFLAGS="-target aarch64-linux-gnu.2.41"

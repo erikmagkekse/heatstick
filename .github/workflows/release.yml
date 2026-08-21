@@ -21,15 +21,23 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # linux / windows build in custom images (fyne-cross base + a
+          # libusb for the target arch + zig/ubsan/glibc fixes), see docker/.
           - os: linux
             arch: amd64
             host: ubuntu-latest
+            image: heatit-fyne-cross:linux
+            dockerfile: docker/Dockerfile.linux
           - os: linux
             arch: arm64
             host: ubuntu-latest
+            image: heatit-fyne-cross:linux-arm64
+            dockerfile: docker/Dockerfile.linux-arm64
           - os: windows
             arch: amd64
             host: ubuntu-latest
+            image: heatit-fyne-cross:windows
+            dockerfile: docker/Dockerfile.windows
           # darwin is built natively (no Docker / no Apple SDK extraction):
           # the runner arch matches the target arch so cgo + libusb line up.
           - os: darwin
@@ -56,6 +64,10 @@ jobs:
         if: ${{ matrix.os == 'darwin' }}
         run: brew install pkg-config libusb
 
+      - name: Build container image (linux / windows)
+        if: ${{ matrix.os != 'darwin' }}
+        run: docker build -q -t "${{ matrix.image }}" -f "${{ matrix.dockerfile }}" docker/
+
       - name: Build
         run: |
           version="${GITHUB_REF_NAME#v}"
@@ -73,7 +85,7 @@ jobs:
               -name heatit \
               -app-id com.kamedi.heatit \
               -app-version "$version" \
-              --pull \
+              -image "${{ matrix.image }}" \
               ./cmd/heatit
           fi
 

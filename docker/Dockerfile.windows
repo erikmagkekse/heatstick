@@ -1,0 +1,55 @@
+# fyne-cross base image (zig-based windows cross-compile) + a static libusb
+# built for x86_64-windows-gnu, so gousb can link via `#cgo pkg-config: libusb-1.0`.
+FROM fyneio/fyne-cross-images:windows
+
+ARG LIBUSB_VERSION=1.0.27
+
+RUN set -eux; \
+    cd /tmp; \
+    curl -sSL -o libusb.tar.gz "https://github.com/libusb/libusb/archive/refs/tags/v${LIBUSB_VERSION}.tar.gz"; \
+    tar xzf libusb.tar.gz; \
+    cd "libusb-${LIBUSB_VERSION}"; \
+    \
+    # Minimal config.h for a non-MSVC (zig / GNU) Windows build.
+    mkdir -p /tmp/lcfg /tmp/obj /tmp/archive; \
+    printf '%s\n' \
+      '#define DEFAULT_VISIBILITY /**/' \
+      '#define ENABLE_LOGGING 1' \
+      '#define PLATFORM_WINDOWS 1' \
+      '#define PRINTF_FORMAT(a, b) /**/' \
+      > /tmp/lcfg/config.h; \
+    \
+    # Compile each libusb source file for x86_64-windows-gnu with zig.
+    for f in \
+      libusb/core.c libusb/descriptor.c libusb/hotplug.c libusb/io.c \
+      libusb/strerror.c libusb/sync.c \
+      libusb/os/events_windows.c libusb/os/threads_windows.c \
+      libusb/os/windows_common.c libusb/os/windows_usbdk.c libusb/os/windows_winusb.c; do \
+       zig cc -target x86_64-windows-gnu -O2 -c -I. -Ilibusb -I/tmp/lcfg "$f" -o "/tmp/obj/$(basename "$f" .c).o"; \
+    done; \
+    \
+    # Archive the objects into a static lib (named after the first object).
+    (cd /tmp/archive && zig build-lib -target x86_64-windows-gnu /tmp/obj/*.o); \
+    install -m 0644 /tmp/archive/core.lib /usr/lib/libusb-1.0.a; \
+    \
+    # Public header + pkg-config file.
+    mkdir -p /usr/include/libusb-1.0 /usr/lib/pkgconfig; \
+    cp libusb/libusb.h /usr/include/libusb-1.0/libusb.h; \
+    printf '%s\n' \
+      'prefix=/usr' \
+      'exec_prefix=${prefix}' \
+      'libdir=${exec_prefix}/lib' \
+      'includedir=${prefix}/include' \
+      '' \
+      'Name: libusb-1.0' \
+      'Description: C API for USB device access' \
+      "Version: ${LIBUSB_VERSION}" \
+      'Libs: ${libdir}/libusb-1.0.a' \
+      'Cflags: -I${includedir}/libusb-1.0' \
+      > /usr/lib/pkgconfig/libusb-1.0.pc; \
+    \
+    rm -rf "/tmp/libusb-${LIBUSB_VERSION}" /tmp/libusb.tar.gz /tmp/lcfg /tmp/obj /tmp/archive
+
+# zig cc defaults to Debug mode, which instruments C with ubsan (__ubsan_handle_*
+# refs) that nothing provides at link time. Optimize the cgo C code instead.
+ENV CFLAGS=-O2
