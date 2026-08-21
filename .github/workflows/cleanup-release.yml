@@ -15,17 +15,31 @@ jobs:
       - uses: actions/github-script@v7
         with:
           script: |
-            const base = 'https://api.github.com'
             const h = {
               Authorization: 'token ' + process.env.GITHUB_TOKEN,
               Accept: 'application/vnd.github+json',
             }
+            const base = 'https://api.github.com'
             const repo = `${context.repo.owner}/${context.repo.repo}`
-            const rel = await (await fetch(`${base}/repos/${repo}/releases/tags/v1.0.0`, { headers: h })).json()
-            const assets = await (await fetch(`${base}/repos/${repo}/releases/${rel.id}/assets?per_page=100`, { headers: h })).json()
+            const get = async (url) => {
+              const r = await fetch(url, { headers: h })
+              const t = await r.text()
+              let b
+              try { b = JSON.parse(t) } catch { b = t }
+              core.info(`GET ${url} -> ${r.status}`)
+              return { status: r.status, body: b }
+            }
+            const del = async (url) => {
+              const r = await fetch(url, { method: 'DELETE', headers: h })
+              core.info(`DELETE ${url} -> ${r.status}`)
+              return r.status
+            }
+            const rel = (await get(`${base}/repos/${repo}/releases/tags/v1.0.0`)).body
+            if (typeof rel !== 'object' || rel.message) { core.setFailed('release lookup failed: ' + JSON.stringify(rel)); return }
+            let assets = (await get(`${base}/repos/${repo}/releases/${rel.id}/assets?per_page=100`)).body
+            if (!Array.isArray(assets)) { core.setFailed('assets lookup failed: ' + JSON.stringify(assets)); return }
             for (const a of assets) {
               if (a.name.startsWith('heatit_') || a.name === 'asset_test.bin') {
-                const r = await fetch(`${base}/repos/${repo}/releases/${rel.id}/assets/${a.id}`, { method: 'DELETE', headers: h })
-                core.info(`${a.name} -> ${r.status}`)
+                await del(`${base}/repos/${repo}/releases/${rel.id}/assets/${a.id}`)
               }
             }
