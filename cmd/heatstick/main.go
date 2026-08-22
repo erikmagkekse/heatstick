@@ -3,6 +3,7 @@
 package main
 
 import (
+	"embed"
 	"encoding/hex"
 	"flag"
 	"fmt"
@@ -23,6 +24,11 @@ import (
 )
 
 const appID = "com.erikmagkekse.heatstick"
+
+// iconFS holds the app and window icon (Icon.svg is the vector source).
+//
+//go:embed Icon.png
+var iconFS embed.FS
 
 // tempBase values (index into device.TemperatureLevels).
 const (
@@ -447,6 +453,9 @@ func main() {
 
 	w := a.NewWindow("heatstick")
 	u.win = w
+	if iconBytes, err := iconFS.ReadFile("Icon.png"); err == nil {
+		w.SetIcon(fyne.NewStaticResource("icon.png", iconBytes))
+	}
 	w.Resize(normalWinSize)
 	w.SetContent(content)
 	w.CenterOnScreen()
