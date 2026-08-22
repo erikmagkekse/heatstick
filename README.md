@@ -132,3 +132,13 @@ physical behavior (LED phases, treatment temperatures), and the initial
 goal statement. **No lines of code were written by a human.**
 
 Timeline: August 2026.
+
+## License
+
+Released into the public domain under the [Unlicense](https://unlicense.org/)
+— take it, use it, modify it, ship it, whatever you want. No warranty, no
+liability. See [`LICENSE`](LICENSE).
+
+Independent and unofficial: "heat it®" is a trademark of Kamedi GmbH. This is
+a desktop client for the dongle's USB protocol and does not claim any
+third-party trademark; the Unlicense covers this code only.

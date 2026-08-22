@@ -1,7 +1,7 @@
 [Details]
 Name = "heatstick"
 ID = "com.erikmagkekse.heatstick"
-Version = "1.0.0"
+Version = "1.0.1"
 Build = 1
 
 [Migrations]
