@@ -30,6 +30,13 @@ const (
 	baseAdult = 3 // 51.5 degC
 )
 
+// Window sizes per UI mode. Normal mode is compact (device + treatment +
+// actions); Advanced mode is taller to fit the statistics + debug cards.
+var (
+	normalWinSize   = fyne.NewSize(520, 660)
+	advancedWinSize = fyne.NewSize(620, 860)
+)
+
 var (
 	flagDark  = flag.Bool("dark", false, "start in dark mode (default: follow the system light/dark setting)")
 	flagTreat = flag.Bool("treat", false, "start a treatment automatically once connected")
@@ -333,6 +340,8 @@ func parseHexFrame(s string) ([]byte, error) {
 }
 
 type ui struct {
+	win fyne.Window // set after the window is created; used to resize on mode switch
+
 	// top bar
 	modeSeg   *segmented
 	darkCheck *widget.Check
@@ -350,8 +359,7 @@ type ui struct {
 	sensitiveCheck *widget.Check
 	durSeg         *segmented
 	targetLabel    *widget.Label
-	startBtn       *widget.Button
-	abortBtn       *widget.Button
+	treatBtn       *widget.Button
 
 	// advanced mode (hidden in Normal mode)
 	statsCard    *widget.Card
@@ -438,7 +446,8 @@ func main() {
 	content := buildUI(a, c, u)
 
 	w := a.NewWindow("heatstick")
-	w.Resize(fyne.NewSize(620, 820))
+	u.win = w
+	w.Resize(normalWinSize)
 	w.SetContent(content)
 	w.CenterOnScreen()
 
@@ -573,20 +582,22 @@ func buildUI(a fyne.App, c *ctrl, u *ui) fyne.CanvasObject {
 	})
 	u.targetLabel = widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
 
-	treatmentGrid := container.NewGridWithColumns(2,
+	treatmentCard := widget.NewCard("Treatment", "", container.NewVBox(
 		widget.NewLabelWithStyle("Profile", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		u.profileSeg.Obj(),
 		widget.NewLabelWithStyle("Duration", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		u.durSeg.Obj(),
-	)
-	treatmentCard := widget.NewCard("Treatment", "", container.NewVBox(
-		treatmentGrid,
 		u.sensitiveCheck,
 		u.targetLabel,
 	))
 
 	// --- Actions ---
-	u.startBtn = widget.NewButtonWithIcon("Start Treatment", theme.MediaPlayIcon(), func() {
+	u.treatBtn = widget.NewButtonWithIcon("Start Treatment", theme.MediaPlayIcon(), func() {
+		_, treating, _, _, _, _, _ := c.snapshot()
+		if treating {
+			go c.abort()
+			return
+		}
 		go func() {
 			if err := c.startTreatment(); err != nil {
 				c.mu.Lock()
@@ -595,11 +606,8 @@ func buildUI(a fyne.App, c *ctrl, u *ui) fyne.CanvasObject {
 			}
 		}()
 	})
-	u.startBtn.Importance = widget.HighImportance
-	u.abortBtn = widget.NewButtonWithIcon("Abort", theme.MediaStopIcon(), func() {
-		go c.abort()
-	})
-	actionCard := widget.NewCard("", "", container.NewVBox(u.startBtn, u.abortBtn))
+	u.treatBtn.Importance = widget.HighImportance
+	actionCard := widget.NewCard("", "", container.NewVBox(u.treatBtn))
 
 	// --- Statistics (advanced mode) ---
 	u.statsLabel = widget.NewRichTextWithText("")
@@ -615,36 +623,35 @@ func buildUI(a fyne.App, c *ctrl, u *ui) fyne.CanvasObject {
 	))
 
 	// --- Debug (advanced mode) ---
-	u.rawEntry = widget.NewEntry()
+	u.rawEntry = widget.NewMultiLineEntry()
 	u.rawEntry.PlaceHolder = "ff 0a ff ff ff 03   (12 bytes hex)"
 	u.rawResult = widget.NewLabel("")
 	u.rawResult.Wrapping = fyne.TextWrapWord
-	rawRow := container.NewHBox(u.rawEntry,
-		widget.NewButton("Send", func() {
-			go func() {
-				text := u.rawEntry.Text
-				frame, err := parseHexFrame(text)
-				var msg string
-				if err != nil {
-					msg = err.Error()
+	sendRawBtn := widget.NewButtonWithIcon("Send", theme.MailSendIcon(), func() {
+		go func() {
+			text := u.rawEntry.Text
+			frame, err := parseHexFrame(text)
+			var msg string
+			if err != nil {
+				msg = err.Error()
+			} else {
+				resp, rerr := c.sendRaw(frame)
+				if rerr != nil {
+					msg = rerr.Error()
 				} else {
-					resp, rerr := c.sendRaw(frame)
-					if rerr != nil {
-						msg = rerr.Error()
-					} else {
-						ck := "BAD"
-						if device.ChecksumOK(resp) {
-							ck = "ok"
-						}
-						msg = fmt.Sprintf("resp: %s   (checksum %s)", device.FrameHex(resp), ck)
+					ck := "BAD"
+					if device.ChecksumOK(resp) {
+						ck = "ok"
 					}
+					msg = fmt.Sprintf("resp: %s   (checksum %s)", device.FrameHex(resp), ck)
 				}
-				fyne.Do(func() {
-					u.rawResult.Text = msg
-					u.rawResult.Refresh()
-				})
-			}()
-		}))
+			}
+			fyne.Do(func() {
+				u.rawResult.Text = msg
+				u.rawResult.Refresh()
+			})
+		}()
+	})
 
 	u.versionLabel = widget.NewLabel("")
 	u.versionLabel.Wrapping = fyne.TextWrapWord
@@ -665,10 +672,16 @@ func buildUI(a fyne.App, c *ctrl, u *ui) fyne.CanvasObject {
 
 	u.trafficLabel = widget.NewRichTextWithText("")
 	u.trafficLabel.Wrapping = fyne.TextWrapWord
+	// Cap the log to a bounded, vertically scrollable box. Use an explicit
+	// container.NewScroll (the RichText's built-in Scroll property paints empty
+	// inside a fixed-height container); fixedHeightLayout forces it to 200px.
+	trafficBox := fyne.NewContainerWithLayout(fixedHeightLayout{200},
+		container.NewScroll(u.trafficLabel))
 
 	u.debugCard = widget.NewCard("Debug", "", container.NewVBox(
 		widget.NewLabelWithStyle("Raw frame send", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		rawRow,
+		u.rawEntry,
+		container.NewBorder(nil, nil, sendRawBtn, nil, layout.NewSpacer()),
 		u.rawResult,
 		widget.NewSeparator(),
 		container.NewHBox(
@@ -690,7 +703,7 @@ func buildUI(a fyne.App, c *ctrl, u *ui) fyne.CanvasObject {
 			layout.NewSpacer(),
 			widget.NewButton("Clear", func() { c.log.clear() }),
 		),
-		u.trafficLabel,
+		trafficBox,
 	))
 
 	// --- Body: user cards always, advanced cards toggled by mode ---
@@ -706,7 +719,8 @@ func buildUI(a fyne.App, c *ctrl, u *ui) fyne.CanvasObject {
 	return container.NewBorder(top, nil, nil, nil, container.NewScroll(container.NewPadded(body)))
 }
 
-// setMode shows the advanced cards in Advanced mode and hides them in Normal.
+// setMode shows the advanced cards in Advanced mode and hides them in Normal,
+// and resizes the window to fit the active mode's content.
 func (u *ui) setMode(advanced bool) {
 	if advanced {
 		u.statsCard.Show()
@@ -714,6 +728,13 @@ func (u *ui) setMode(advanced bool) {
 	} else {
 		u.statsCard.Hide()
 		u.debugCard.Hide()
+	}
+	if u.win != nil {
+		if advanced {
+			u.win.Resize(advancedWinSize)
+		} else {
+			u.win.Resize(normalWinSize)
+		}
 	}
 }
 
@@ -807,9 +828,15 @@ func refresh(a fyne.App, c *ctrl, u *ui) {
 	u.targetLabel.Text = fmt.Sprintf("Target %.1f °C", target)
 	u.targetLabel.Refresh()
 
-	// Actions
-	setButtonEnabled(u.startBtn, connected && !treating)
-	setButtonEnabled(u.abortBtn, treating)
+	// Actions: single toggle — Start when idle, Stop while treating
+	if treating {
+		u.treatBtn.SetText("Stop")
+		u.treatBtn.SetIcon(theme.MediaStopIcon())
+	} else {
+		u.treatBtn.SetText("Start Treatment")
+		u.treatBtn.SetIcon(theme.MediaPlayIcon())
+	}
+	setButtonEnabled(u.treatBtn, connected)
 }
 
 // setButtonEnabled enables or disables a button based on the flag.
@@ -818,5 +845,27 @@ func setButtonEnabled(b *widget.Button, enabled bool) {
 		b.Enable()
 	} else {
 		b.Disable()
+	}
+}
+
+// fixedHeightLayout resizes its children to a fixed height (width fills the
+// available space). Used to cap the traffic log to a bounded, scrollable box —
+// Fyne widgets size to their renderer's MinSize, so a plain layout cannot
+// constrain a scrolling RichText's height.
+type fixedHeightLayout struct{ h float32 }
+
+func (f fixedHeightLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	var w float32
+	for _, o := range objects {
+		if mw := o.MinSize().Width; mw > w {
+			w = mw
+		}
+	}
+	return fyne.NewSize(w, f.h)
+}
+
+func (f fixedHeightLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	for _, o := range objects {
+		o.Resize(fyne.NewSize(size.Width, f.h))
 	}
 }

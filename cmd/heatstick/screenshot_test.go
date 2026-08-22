@@ -89,10 +89,10 @@ func TestScreenshots(t *testing.T) {
 		})
 	}
 
-	shoot("idle", false, false, false, fyne.NewSize(620, 820))
-	shoot("treating", false, true, false, fyne.NewSize(620, 820))
-	shoot("dark", true, false, false, fyne.NewSize(620, 820))
-	shoot("advanced", false, false, true, fyne.NewSize(620, 1040))
+	shoot("idle", false, false, false, normalWinSize)
+	shoot("treating", false, true, false, normalWinSize)
+	shoot("dark", true, false, false, normalWinSize)
+	shoot("advanced", false, false, true, fyne.NewSize(620, 1400))
 }
 
 // populateCtrl fills the controller with real device data if the dongle is

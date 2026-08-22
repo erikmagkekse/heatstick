@@ -25,8 +25,9 @@ Targets: **Linux (X11 + Wayland)**, **Windows** and **macOS**.
 - **Treatment settings** — Child (48.5 °C) / Adult (51.5 °C) base,
   *Sensitive* (−1.5 °C) modifier, duration Short (4 s) / Medium (7 s) /
   Long (9 s). Temperature/duration levels match the official app.
-- **Start / Abort** — starts a treatment on the device and tracks it through
-  the firmware phases until it finishes.
+- **Start / Stop** — a single toggle button starts a treatment when idle and
+  aborts it while running; the app tracks it through the firmware phases until
+  it finishes.
 - **Statistics** — reads the 81-byte `INTERNAL_MEMORY` blob (9 pages),
   decodes it (boots, finished treatments, reprogrammings, watchdogs, error
   counters, per-treatment max temperatures) and shows the raw hex.
