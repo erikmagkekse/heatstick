@@ -7,13 +7,18 @@ written in Go with [Fyne](https://fyne.io) (UI) and
 
 Targets: **Linux (X11 + Wayland)**, **Windows** and **macOS**.
 
-| | | |
-|---|---|---|
-| ![idle](docs/screenshots/idle.png) | ![treating](docs/screenshots/treating.png) | ![dark](docs/screenshots/dark.png) |
-| idle (light) | treating (40 % progress, active phase) | idle (dark mode) |
+| | |
+|---|---|
+| ![idle](docs/screenshots/idle.png) | ![treating](docs/screenshots/treating.png) |
+| Normal mode (light) | treating (40 % progress, active phase) |
+| ![dark](docs/screenshots/dark.png) | ![advanced](docs/screenshots/advanced.png) |
+| Normal mode (dark) | Advanced mode (statistics + debug panel) |
 
 ## Features
 
+- **Two UI modes** — *Normal* (clean treatment view: device status, profile,
+  duration, start/abort) and *Advanced* (adds a statistics card and a debug
+  panel). Switch from the top bar; the app starts in Normal mode.
 - **Auto-connect** — finds the dongle on startup and switches it to the
   application USB configuration; live temperature, phase
   (idle / warmup / active) and progress bar at 5 Hz.

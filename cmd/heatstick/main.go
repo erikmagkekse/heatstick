@@ -6,12 +6,14 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"image/color"
 	"strings"
 	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
@@ -208,6 +210,14 @@ func (c *ctrl) snapshot() (connected, treating bool, status device.Status, prehe
 	return c.connected, c.treating, c.status, c.preheatSec, c.durationSec, c.treatStart, c.lastError
 }
 
+// settingsSnapshot returns a consistent read of the treatment settings plus
+// the effective target temperature.
+func (c *ctrl) settingsSnapshot() (tempBase int, sensitive bool, durLevel int, target float64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.tempBase, c.sensitive, c.durLevel, device.TemperatureLevels[c.tempLevel()]
+}
+
 type debugInfo struct {
 	version    *device.VersionInfo
 	versionErr string
@@ -323,21 +333,93 @@ func parseHexFrame(s string) ([]byte, error) {
 }
 
 type ui struct {
-	devLabel       *widget.Label
-	tempDisplay    *widget.Label
-	phaseLabel     *widget.Label
-	progress       *widget.ProgressBar
+	// top bar
+	modeSeg   *segmented
+	darkCheck *widget.Check
+
+	// device / status
+	connIcon   *widget.Icon
+	devLabel   *widget.Label
+	connectBtn *widget.Button
+	tempText   *canvas.Text
+	phaseLabel *widget.Label
+	progress   *widget.ProgressBar
+
+	// treatment controls
+	profileSeg     *segmented
+	sensitiveCheck *widget.Check
+	durSeg         *segmented
+	targetLabel    *widget.Label
 	startBtn       *widget.Button
 	abortBtn       *widget.Button
-	connectBtn     *widget.Button
-	statsLabel     *widget.RichText
-	trafficLabel   *widget.RichText
-	rawEntry       *widget.Entry
-	rawResult      *widget.Label
-	versionLabel   *widget.Label
-	sensitiveCheck *widget.Check
-	darkCheck      *widget.Check
-	followSystem   bool
+
+	// advanced mode (hidden in Normal mode)
+	statsCard    *widget.Card
+	statsLabel   *widget.RichText
+	debugCard    *widget.Card
+	rawEntry     *widget.Entry
+	rawResult    *widget.Label
+	versionLabel *widget.Label
+	trafficLabel *widget.RichText
+
+	followSystem bool
+}
+
+// segmented is a compact row of buttons where the active one is highlighted,
+// used as a segmented control (Normal/Advanced, profile, duration). It wraps a
+// plain *fyne.Container (HBox) which is what gets placed in the layout tree —
+// Fyne only recurses into concrete *fyne.Container when painting, so the
+// wrapper itself must not be the canvas object.
+type segmented struct {
+	box   *fyne.Container
+	btns  []*widget.Button
+	cur   int
+	onChg func(int)
+}
+
+// Obj returns the container to place in the layout.
+func (s *segmented) Obj() fyne.CanvasObject { return s.box }
+
+func newSegmented(labels []string, initial int, onChg func(int)) *segmented {
+	s := &segmented{cur: initial, onChg: onChg}
+	objects := make([]fyne.CanvasObject, 0, len(labels))
+	for i, l := range labels {
+		b := widget.NewButton(l, func() {
+			s.cur = i
+			s.refresh()
+			if s.onChg != nil {
+				s.onChg(i)
+			}
+		})
+		s.btns = append(s.btns, b)
+		objects = append(objects, b)
+	}
+	s.box = container.NewHBox(objects...)
+	s.refresh()
+	return s
+}
+
+// set syncs the highlight to index i (no-op if unchanged).
+func (s *segmented) set(i int) {
+	if i < 0 || i >= len(s.btns) || i == s.cur {
+		return
+	}
+	s.cur = i
+	s.refresh()
+	if s.onChg != nil {
+		s.onChg(i)
+	}
+}
+
+func (s *segmented) refresh() {
+	for i, b := range s.btns {
+		if i == s.cur {
+			b.Importance = widget.HighImportance
+		} else {
+			b.Importance = widget.LowImportance
+		}
+		b.Refresh()
+	}
 }
 
 func main() {
@@ -356,7 +438,7 @@ func main() {
 	content := buildUI(a, c, u)
 
 	w := a.NewWindow("heatstick")
-	w.Resize(fyne.NewSize(460, 660))
+	w.Resize(fyne.NewSize(620, 820))
 	w.SetContent(content)
 	w.CenterOnScreen()
 
@@ -425,7 +507,28 @@ func monoseg(text string) []widget.RichTextSegment {
 func (u *ui) trafficText(c *ctrl) string { return c.log.text() }
 
 func buildUI(a fyne.App, c *ctrl, u *ui) fyne.CanvasObject {
-	// --- Connection card ---
+	// --- Top bar: title, mode switch, dark toggle ---
+	u.modeSeg = newSegmented([]string{"Normal", "Advanced"}, 0, func(i int) {
+		u.setMode(i == 1)
+	})
+	u.followSystem = !*flagDark
+	u.darkCheck = widget.NewCheck("Dark", func(on bool) {
+		u.followSystem = false
+		if on {
+			a.Settings().SetTheme(theme.DarkTheme())
+		} else {
+			a.Settings().SetTheme(theme.LightTheme())
+		}
+	})
+	u.darkCheck.SetChecked(*flagDark || a.Settings().ThemeVariant() == theme.VariantDark)
+
+	title := widget.NewLabelWithStyle("heatstick", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	right := container.NewHBox(u.modeSeg.Obj(), u.darkCheck)
+	topBar := container.NewBorder(nil, nil, title, right, layout.NewSpacer())
+	top := container.NewVBox(topBar, widget.NewSeparator())
+
+	// --- Device / status card ---
+	u.connIcon = widget.NewIcon(theme.WarningIcon())
 	u.devLabel = widget.NewLabel("Checking device…")
 	u.connectBtn = widget.NewButton("Connect", func() {
 		go func() {
@@ -437,58 +540,49 @@ func buildUI(a fyne.App, c *ctrl, u *ui) fyne.CanvasObject {
 			}
 		}()
 	})
-	connRow := container.NewHBox(u.devLabel, layout.NewSpacer(), u.connectBtn)
-	connCard := widget.NewCard("Device", "", container.NewVBox(connRow))
-
-	// --- Treatment settings card ---
-	tempGroup := widget.NewRadioGroup(
-		[]string{fmt.Sprintf("Child (%.1f °C)", device.TemperatureLevels[baseChild]),
-			fmt.Sprintf("Adult (%.1f °C)", device.TemperatureLevels[baseAdult])},
-		func(sel string) {
-			if sel == fmt.Sprintf("Child (%.1f °C)", device.TemperatureLevels[baseChild]) {
-				c.tempBase = baseChild
-			} else {
-				c.tempBase = baseAdult
-			}
-		})
-	tempGroup.Horizontal = true
-	tempGroup.Selected = fmt.Sprintf("Child (%.1f °C)", device.TemperatureLevels[baseChild])
-
-	u.sensitiveCheck = widget.NewCheck("Sensitive (-1.5 °C)", func(on bool) { c.sensitive = on })
-
-	durGroup := widget.NewRadioGroup(
-		[]string{"Short (4 s)", "Medium (7 s)", "Long (9 s)"},
-		func(sel string) {
-			switch sel {
-			case "Short (4 s)":
-				c.durLevel = 0
-			case "Medium (7 s)":
-				c.durLevel = 1
-			case "Long (9 s)":
-				c.durLevel = 2
-			}
-		})
-	durGroup.Horizontal = true
-	durGroup.Selected = "Short (4 s)"
-
-	settingsCard := widget.NewCard("Treatment", "", container.NewVBox(
-		tempGroup,
-		u.sensitiveCheck,
-		durGroup,
-	))
-
-	// --- Status card ---
-	u.tempDisplay = widget.NewLabelWithStyle("—", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-	u.tempDisplay.Importance = widget.HighImportance
-	u.phaseLabel = widget.NewLabel("idle")
+	u.tempText = canvas.NewText("—", color.Black)
+	u.tempText.TextSize = 42
+	u.tempText.TextStyle = fyne.TextStyle{Bold: true}
+	u.tempText.Alignment = fyne.TextAlignCenter
+	u.phaseLabel = widget.NewLabel("no device")
 	u.phaseLabel.Alignment = fyne.TextAlignCenter
 	u.progress = widget.NewProgressBar()
 	u.progress.SetValue(0)
 
-	statusCard := widget.NewCard("Status", "", container.NewVBox(
-		u.tempDisplay,
+	deviceCard := widget.NewCard("Device", "", container.NewVBox(
+		container.NewHBox(u.connIcon, u.devLabel, layout.NewSpacer(), u.connectBtn),
+		u.tempText,
 		u.phaseLabel,
 		u.progress,
+	))
+
+	// --- Treatment card ---
+	u.profileSeg = newSegmented([]string{
+		fmt.Sprintf("Child (%.1f °C)", device.TemperatureLevels[baseChild]),
+		fmt.Sprintf("Adult (%.1f °C)", device.TemperatureLevels[baseAdult]),
+	}, 0, func(i int) {
+		if i == 0 {
+			c.tempBase = baseChild
+		} else {
+			c.tempBase = baseAdult
+		}
+	})
+	u.sensitiveCheck = widget.NewCheck("Sensitive (−1.5 °C)", func(on bool) { c.sensitive = on })
+	u.durSeg = newSegmented([]string{"Short (4 s)", "Medium (7 s)", "Long (9 s)"}, 0, func(i int) {
+		c.durLevel = i
+	})
+	u.targetLabel = widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
+
+	treatmentGrid := container.NewGridWithColumns(2,
+		widget.NewLabelWithStyle("Profile", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		u.profileSeg.Obj(),
+		widget.NewLabelWithStyle("Duration", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		u.durSeg.Obj(),
+	)
+	treatmentCard := widget.NewCard("Treatment", "", container.NewVBox(
+		treatmentGrid,
+		u.sensitiveCheck,
+		u.targetLabel,
 	))
 
 	// --- Actions ---
@@ -505,13 +599,13 @@ func buildUI(a fyne.App, c *ctrl, u *ui) fyne.CanvasObject {
 	u.abortBtn = widget.NewButtonWithIcon("Abort", theme.MediaStopIcon(), func() {
 		go c.abort()
 	})
-	actionRow := container.NewHBox(u.startBtn, layout.NewSpacer(), u.abortBtn)
+	actionCard := widget.NewCard("", "", container.NewVBox(u.startBtn, u.abortBtn))
 
-	// --- Statistics ---
+	// --- Statistics (advanced mode) ---
 	u.statsLabel = widget.NewRichTextWithText("")
 	u.statsLabel.Wrapping = fyne.TextWrapWord
-	statsCard := widget.NewCard("Statistics", "", container.NewVBox(
-		widget.NewButton("Read statistics", func() {
+	u.statsCard = widget.NewCard("Statistics", "", container.NewVBox(
+		widget.NewButtonWithIcon("Read statistics", theme.HistoryIcon(), func() {
 			go func() {
 				c.readStats()
 				fyne.Do(func() { refreshStats(u, c.debugSnapshot()) })
@@ -520,10 +614,11 @@ func buildUI(a fyne.App, c *ctrl, u *ui) fyne.CanvasObject {
 		u.statsLabel,
 	))
 
-	// --- Debug ---
+	// --- Debug (advanced mode) ---
 	u.rawEntry = widget.NewEntry()
 	u.rawEntry.PlaceHolder = "ff 0a ff ff ff 03   (12 bytes hex)"
 	u.rawResult = widget.NewLabel("")
+	u.rawResult.Wrapping = fyne.TextWrapWord
 	rawRow := container.NewHBox(u.rawEntry,
 		widget.NewButton("Send", func() {
 			go func() {
@@ -550,7 +645,6 @@ func buildUI(a fyne.App, c *ctrl, u *ui) fyne.CanvasObject {
 				})
 			}()
 		}))
-	u.rawResult.Wrapping = fyne.TextWrapWord
 
 	u.versionLabel = widget.NewLabel("")
 	u.versionLabel.Wrapping = fyne.TextWrapWord
@@ -572,14 +666,13 @@ func buildUI(a fyne.App, c *ctrl, u *ui) fyne.CanvasObject {
 	u.trafficLabel = widget.NewRichTextWithText("")
 	u.trafficLabel.Wrapping = fyne.TextWrapWord
 
-	debugCard := widget.NewCard("Debug", "", container.NewVBox(
-		widget.NewSeparator(),
+	u.debugCard = widget.NewCard("Debug", "", container.NewVBox(
 		widget.NewLabelWithStyle("Raw frame send", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		rawRow,
 		u.rawResult,
 		widget.NewSeparator(),
 		container.NewHBox(
-			widget.NewButton("Read version", func() {
+			widget.NewButtonWithIcon("Read version", theme.InfoIcon(), func() {
 				go func() {
 					c.readVersion()
 					fyne.Do(func() { refreshVersion(u, c.debugSnapshot()) })
@@ -600,29 +693,28 @@ func buildUI(a fyne.App, c *ctrl, u *ui) fyne.CanvasObject {
 		u.trafficLabel,
 	))
 
-	// --- Dark mode (follows the system setting unless explicitly toggled) ---
-	u.followSystem = !*flagDark
-	u.darkCheck = widget.NewCheck("Dark mode", func(on bool) {
-		u.followSystem = false
-		if on {
-			a.Settings().SetTheme(theme.DarkTheme())
-		} else {
-			a.Settings().SetTheme(theme.LightTheme())
-		}
-	})
-	u.darkCheck.SetChecked(*flagDark || a.Settings().ThemeVariant() == theme.VariantDark)
-	darkCard := widget.NewCard("Display", "", container.NewVBox(u.darkCheck))
-
+	// --- Body: user cards always, advanced cards toggled by mode ---
 	body := container.NewVBox(
-		connCard,
-		settingsCard,
-		statusCard,
-		actionRow,
-		statsCard,
-		debugCard,
-		darkCard,
+		deviceCard,
+		treatmentCard,
+		actionCard,
+		u.statsCard,
+		u.debugCard,
 	)
-	return container.NewScroll(container.NewPadded(body))
+	// Default to Normal mode: hide the advanced cards (modeSeg starts at 0).
+	u.setMode(false)
+	return container.NewBorder(top, nil, nil, nil, container.NewScroll(container.NewPadded(body)))
+}
+
+// setMode shows the advanced cards in Advanced mode and hides them in Normal.
+func (u *ui) setMode(advanced bool) {
+	if advanced {
+		u.statsCard.Show()
+		u.debugCard.Show()
+	} else {
+		u.statsCard.Hide()
+		u.debugCard.Hide()
+	}
 }
 
 func refreshVersion(u *ui, d debugInfo) {
@@ -650,26 +742,30 @@ func refreshStats(u *ui, d debugInfo) {
 
 // refresh updates the UI from the controller state (main goroutine).
 func refresh(a fyne.App, c *ctrl, u *ui) {
-	// Keep the "Dark mode" check in sync while following the system setting.
+	// Keep the "Dark" check in sync while following the system setting.
 	if u.followSystem {
 		u.darkCheck.SetChecked(a.Settings().ThemeVariant() == theme.VariantDark)
 	}
 
 	connected, treating, st, preheat, duration, start, err := c.snapshot()
 
+	// Device / status
 	if connected {
+		u.connIcon.SetResource(theme.CheckButtonCheckedIcon())
 		u.devLabel.Text = "Device connected"
+	} else if err != "" {
+		u.connIcon.SetResource(theme.WarningIcon())
+		u.devLabel.Text = "No device found"
 	} else {
-		if err != "" {
-			u.devLabel.Text = "No device found"
-		} else {
-			u.devLabel.Text = "Not connected"
-		}
+		u.connIcon.SetResource(theme.WarningIcon())
+		u.devLabel.Text = "Not connected"
 	}
+	u.connIcon.Refresh()
 	u.devLabel.Refresh()
+	setButtonEnabled(u.connectBtn, !connected)
 
 	if connected {
-		u.tempDisplay.Text = fmt.Sprintf("%.1f °C", st.Temperature)
+		u.tempText.Text = fmt.Sprintf("%.1f °C", st.Temperature)
 		if treating {
 			u.phaseLabel.Text = "phase: " + st.Phase()
 			total := preheat + duration
@@ -689,19 +785,38 @@ func refresh(a fyne.App, c *ctrl, u *ui) {
 			u.progress.SetValue(0)
 		}
 	} else {
-		u.tempDisplay.Text = "—"
+		u.tempText.Text = "—"
 		u.phaseLabel.Text = "no device"
 		u.progress.SetValue(0)
 	}
-	u.tempDisplay.Refresh()
+	u.tempText.Color = a.Settings().Theme().Color(theme.ColorNameForeground, a.Settings().ThemeVariant())
+	u.tempText.Refresh()
 	u.phaseLabel.Refresh()
 
-	u.startBtn.Disable()
-	if connected && !treating {
-		u.startBtn.Enable()
+	// Treatment settings (sync controls to controller state)
+	tempBase, sensitive, durLevel, target := c.settingsSnapshot()
+	if tempBase == baseAdult {
+		u.profileSeg.set(1)
+	} else {
+		u.profileSeg.set(0)
 	}
-	u.abortBtn.Disable()
-	if treating {
-		u.abortBtn.Enable()
+	u.durSeg.set(durLevel)
+	if u.sensitiveCheck.Checked != sensitive {
+		u.sensitiveCheck.SetChecked(sensitive)
+	}
+	u.targetLabel.Text = fmt.Sprintf("Target %.1f °C", target)
+	u.targetLabel.Refresh()
+
+	// Actions
+	setButtonEnabled(u.startBtn, connected && !treating)
+	setButtonEnabled(u.abortBtn, treating)
+}
+
+// setButtonEnabled enables or disables a button based on the flag.
+func setButtonEnabled(b *widget.Button, enabled bool) {
+	if enabled {
+		b.Enable()
+	} else {
+		b.Disable()
 	}
 }

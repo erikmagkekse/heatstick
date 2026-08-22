@@ -35,7 +35,7 @@ func TestScreenshots(t *testing.T) {
 		t.Fatalf("create output dir: %v", err)
 	}
 
-	shoot := func(name string, dark, treating bool) {
+	shoot := func(name string, dark, treating, advanced bool, size fyne.Size) {
 		t.Run(name, func(t *testing.T) {
 			a := test.NewApp()
 			if dark {
@@ -59,7 +59,10 @@ func TestScreenshots(t *testing.T) {
 			w := a.NewWindow("heatstick")
 			w.SetContent(buildUI(a, c, u))
 			u.followSystem = false // the theme is set explicitly above
-			w.Resize(fyne.NewSize(460, 660))
+			if advanced {
+				u.setMode(true)
+			}
+			w.Resize(size)
 			if dark {
 				u.darkCheck.SetChecked(true)
 			}
@@ -86,9 +89,10 @@ func TestScreenshots(t *testing.T) {
 		})
 	}
 
-	shoot("idle", false, false)
-	shoot("treating", false, true)
-	shoot("dark", true, false)
+	shoot("idle", false, false, false, fyne.NewSize(620, 820))
+	shoot("treating", false, true, false, fyne.NewSize(620, 820))
+	shoot("dark", true, false, false, fyne.NewSize(620, 820))
+	shoot("advanced", false, false, true, fyne.NewSize(620, 1040))
 }
 
 // populateCtrl fills the controller with real device data if the dongle is
