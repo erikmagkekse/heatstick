@@ -13,6 +13,9 @@ research/tools/devtest
 research/tools/treattest
 research/tools/ledtest
 
+# Generated binary dumps (e.g. research/tools/flashdump)
+*.bin
+
 # Snapshots / archives
 *.zip
 
