@@ -14,6 +14,13 @@ Targets: **Linux (X11 + Wayland)**, **Windows** and **macOS**.
 | ![dark](docs/screenshots/dark.png) | ![advanced](docs/screenshots/advanced.png) |
 | Normal mode (dark) | Advanced mode (statistics + debug panel) |
 
+## In action
+
+That's how I actually use it — the app on a laptop driving the dongle,
+tucked onto a leg (blue LED = active phase, ~50 °C):
+
+![in use](docs/in-use.jpg)
+
 ## Features
 
 - **Two UI modes** — *Normal* (clean treatment view: device status, profile,
