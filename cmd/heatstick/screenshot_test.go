@@ -86,6 +86,15 @@ func TestScreenshots(t *testing.T) {
 			w.Resize(fyne.NewSize(size.Width+2, size.Height+2))
 			w.Resize(size)
 
+			// The nudge only re-layouts containers whose own size changed;
+			// the fixed-size dial GridWrap does not change, so its centered
+			// countdown (built with empty text, min width 0) keeps its stale
+			// zero width and renders shifted right of the disc center.
+			// Refresh() re-runs the layout synchronously and recursively,
+			// exactly the extra pass GL would do before the next frame.
+			u.stateTreating.Refresh()
+			u.stateComplete.Refresh()
+
 			img := w.Canvas().Capture()
 			path := filepath.Join(outDir, name+".png")
 			f, err := os.Create(path)
