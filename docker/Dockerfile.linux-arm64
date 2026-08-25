@@ -63,6 +63,34 @@ RUN set -eux; \
     \
     rm -rf "/tmp/libusb-${LIBUSB_VERSION}" /tmp/libusb.tar.gz /tmp/lcfg /tmp/obj /tmp/archive
 
+# oto's cgo ALSA driver needs the alsa headers (arch-independent, from the
+# host distro package) and an aarch64 libasound to link against (the distro
+# package only ships the host arch, so the .so comes from the Ubuntu ports
+# pool; it needs at most GLIBC_2.38, which the 2.41 link target covers).
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends libasound2-dev; \
+    curl -sSL -o /tmp/alsa-arm64.deb "https://ports.ubuntu.com/pool/main/a/alsa-lib/libasound2t64_1.2.11-1ubuntu0.3_arm64.deb"; \
+    dpkg-deb -x /tmp/alsa-arm64.deb /tmp/alsa-arm64; \
+    mkdir -p /usr/lib/aarch64-linux-gnu; \
+    install -m 0644 /tmp/alsa-arm64/usr/lib/aarch64-linux-gnu/libasound.so.2.0.0 /usr/lib/aarch64-linux-gnu/; \
+    ln -s libasound.so.2.0.0 /usr/lib/aarch64-linux-gnu/libasound.so; \
+    # The distro's .pc points at the host-arch lib dir; replace it.
+    rm -f /usr/lib/x86_64-linux-gnu/pkgconfig/alsa.pc; \
+    printf '%s\n' \
+      'prefix=/usr' \
+      'exec_prefix=${prefix}' \
+      'libdir=/usr/lib/aarch64-linux-gnu' \
+      'includedir=${prefix}/include' \
+      '' \
+      'Name: alsa' \
+      'Description: Advanced Linux Sound Architecture (aarch64)' \
+      'Version: 1.2.11' \
+      'Libs: /usr/lib/aarch64-linux-gnu/libasound.so' \
+      'Cflags: -I${includedir}/alsa' \
+      > /usr/lib/pkgconfig/alsa.pc; \
+    rm -rf /var/lib/apt/lists/* /tmp/alsa-arm64.deb /tmp/alsa-arm64
+
 # fyne-cross compiles cgo C code with `zig cc`, which defaults to Debug mode
 # and instruments it with ubsan (__ubsan_handle_* refs) that nothing provides at
 # link time. Optimize the C code instead.

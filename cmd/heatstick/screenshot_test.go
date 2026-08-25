@@ -11,7 +11,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/driver/software"
 	"fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/theme"
 
 	"heatstick/device"
 )
@@ -35,16 +34,12 @@ func TestScreenshots(t *testing.T) {
 		t.Fatalf("create output dir: %v", err)
 	}
 
-	shoot := func(name string, dark, treating, advanced bool, size fyne.Size) {
+	shoot := func(name string, dark, treating, done, advanced bool, size fyne.Size) {
 		t.Run(name, func(t *testing.T) {
 			a := test.NewApp()
-			if dark {
-				a.Settings().SetTheme(theme.DarkTheme())
-			} else {
-				a.Settings().SetTheme(theme.LightTheme())
-			}
+			a.Settings().SetTheme(heatThemeFor(dark))
 
-			c := &ctrl{tempBase: baseChild, durLevel: 0, log: &trafficLog{cap: 120}}
+			c := &ctrl{tempBase: baseAdult, durLevel: 2, sensitive: true, log: &trafficLog{cap: 120}}
 			populateCtrl(c)
 
 			if treating {
@@ -57,8 +52,15 @@ func TestScreenshots(t *testing.T) {
 
 			u := &ui{}
 			w := a.NewWindow("heatstick")
-			w.SetContent(buildUI(a, c, u))
-			u.followSystem = false // the theme is set explicitly above
+			w.SetContent(buildUI(a, c, u, appSettings{sounds: true}))
+			// Silence the sound cues while refresh() runs. SetChecked fires
+			// OnChanged in Fyne 2.8, but the callback only writes the test
+			// app's in-memory preferences, so it is harmless here; the
+			// default-on state is restored before the shot.
+			u.soundsCheck.SetChecked(false)
+			if done {
+				u.lastTreating = true // makes refresh() show the completed state
+			}
 			if advanced {
 				u.setMode(true)
 			}
@@ -69,11 +71,20 @@ func TestScreenshots(t *testing.T) {
 			w.Canvas().(software.WindowlessCanvas).SetScale(2) // crisp 2x output
 
 			refresh(a, c, u)
+			u.soundsCheck.SetChecked(true)
 			d := c.debugSnapshot()
 			refreshVersion(u, d)
 			refreshStats(u, d)
-			u.trafficLabel.Segments = monoseg(c.log.text())
+			u.trafficLabel.Segments = monoseg(c.log.text(), u.lang)
 			u.trafficLabel.Refresh()
+
+			// The GL driver re-runs container layouts on every render pass
+			// (min-size changes bubble up to the parent). The software
+			// painter does not, so a widget that refresh() newly shows (e.g.
+			// the temperature label) would render at its stale zero size.
+			// Nudging the size forces the one genuine re-layout we need.
+			w.Resize(fyne.NewSize(size.Width+2, size.Height+2))
+			w.Resize(size)
 
 			img := w.Canvas().Capture()
 			path := filepath.Join(outDir, name+".png")
@@ -89,10 +100,11 @@ func TestScreenshots(t *testing.T) {
 		})
 	}
 
-	shoot("idle", false, false, false, normalWinSize)
-	shoot("treating", false, true, false, normalWinSize)
-	shoot("dark", true, false, false, normalWinSize)
-	shoot("advanced", false, false, true, fyne.NewSize(620, 1400))
+	shoot("idle", false, false, false, false, idleWinSize)
+	shoot("treating", false, true, false, false, treatingWinSize)
+	shoot("complete", false, false, true, false, doneWinSize)
+	shoot("dark", true, false, false, false, idleWinSize)
+	shoot("advanced", false, false, false, true, fyne.NewSize(520, 1400))
 }
 
 // populateCtrl fills the controller with real device data if the dongle is

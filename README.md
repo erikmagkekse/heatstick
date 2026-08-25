@@ -45,7 +45,43 @@ tucked onto a leg (blue LED = active phase, ~50 °C):
   debug card (standby / off / green / red / blue / white).
 - **Debug card** — raw 12-byte frame send with response + checksum check,
   live USB traffic log (hex frames with timestamps), version read.
+- **Calm sounds** — soft chime when the dongle is plugged in, when a treatment
+  enters the active phase, a bright success chime when a treatment is
+  completed, and a farewell chime when the dongle is unplugged (embedded in
+  the binary, toggle in the Settings menu, gear icon top right).
+- **Kamedi look** — the app wears the original Kamedi design: dark navy
+  theme, white active buttons with pie-chart duration and person pictograms,
+  and a circular status dial (temperature when idle, green dial with seconds
+  countdown while treating, check mark when the treatment is completed). The
+  Dark toggle switches to a deeper navy.
+- **Remembered settings** — profile, sensitivity, duration, UI mode and
+  theme are restored on the next start.
 - **Dark mode** toggle.
+
+## Auto-start when the dongle is plugged in
+
+A headless watcher (`heatstick monitor`) polls for the dongle and starts the
+app whenever it is attached. If the app is already running, a second launch
+just brings the existing window to the front (single-instance guard). When
+the dongle is unplugged the app closes again — the watcher starts it once
+more on the next plug-in.
+
+Set up the per-user autostart (no admin rights required) — either from the
+command line or from the app's Settings card:
+
+```sh
+heatstick hotplug install     # create the autostart entry
+heatstick hotplug uninstall   # remove it again
+```
+
+| Platform | Mechanism |
+|---|---|
+| Linux | systemd user service `~/.config/systemd/user/heatstick-monitor.service` |
+| Windows | per-user scheduled task, runs at log on |
+| macOS | LaunchAgent `~/Library/LaunchAgents/com.erikmagkekse.heatstick-monitor.plist` |
+
+On Windows the dongle must be visible to libusb first (WinUSB driver), the
+same requirement the app itself has.
 
 ## Build & run
 
@@ -65,6 +101,15 @@ Flags:
 |---|---|
 | `-dark` | start in dark mode (default: follow the system light/dark setting) |
 | `-treat` | start a treatment automatically once connected |
+| `-stay-open` | keep the window open when the dongle is unplugged (default: close) |
+
+Subcommands:
+
+| Command | Effect |
+|---|---|
+| `heatstick monitor` | headless hotplug watcher (usually started by the autostart entry) |
+| `heatstick hotplug install` | set up the per-user autostart (see [Auto-start](#auto-start-when-the-dongle-is-plugged-in)) |
+| `heatstick hotplug uninstall` | remove the autostart entry |
 
 App screenshots are rendered by the test driver (see
 `cmd/heatstick/screenshot_test.go`) — the GL driver's `Canvas.Capture()`

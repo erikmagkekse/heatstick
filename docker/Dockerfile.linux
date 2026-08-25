@@ -1,8 +1,9 @@
-# fyne-cross base image + libusb (gousb links it via `#cgo pkg-config: libusb-1.0`).
+# fyne-cross base image + libusb (gousb links it via `#cgo pkg-config:
+# libusb-1.0`) + ALSA dev files (oto links it via `#cgo pkg-config: alsa`).
 FROM fyneio/fyne-cross-images:linux
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libusb-1.0-0-dev \
+    && apt-get install -y --no-install-recommends libusb-1.0-0-dev libasound2-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # fyne-cross compiles cgo C code with `zig cc`, which defaults to Debug mode

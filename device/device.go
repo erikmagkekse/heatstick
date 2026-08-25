@@ -87,6 +87,24 @@ func Open() (*Device, error) {
 	return &Device{ctx: ctx, dev: dev, cfg: cfg, intf: intf, inEp: inEp, outEp: outEp}, nil
 }
 
+// Present reports whether the dongle is currently attached. It never opens
+// the device; it only enumerates.
+func Present() bool {
+	ctx := gousb.NewContext()
+	defer ctx.Close()
+	found := false
+	_, _ = ctx.OpenDevices(func(desc *gousb.DeviceDesc) bool {
+		if found {
+			return false
+		}
+		if desc.Vendor == Vid && desc.Product == Pid {
+			found = true
+		}
+		return false
+	})
+	return found
+}
+
 // Close releases the device and all USB resources.
 func (d *Device) Close() error {
 	if d == nil {
